@@ -41,18 +41,14 @@ void find(char *path, char *name) {
             strcpy(buff, path);
             p = buff + strlen(buff);
             *p++ = '/';
-            while(read(fd, &de, sizeof(de)) == sizeof(de)){
-                if(de.inum == 0)
-                    continue;
-                if(!strcmp(de.name, ".") || !strcmp(de.name, "..")) {
+            while(read(fd, &de, sizeof(de)) == sizeof(de)) {
+                if(de.inum == 0 || !strcmp(de.name, ".") || !strcmp(de.name, "..")) {
                     continue;
                 }
                 memmove(p, de.name, DIRSIZ);
                 p[DIRSIZ] = 0;
                 find(buff, name);
-                }
-            }
-            
+            } 
             break;
     }
     close(fd);
