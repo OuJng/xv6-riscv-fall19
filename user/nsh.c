@@ -21,15 +21,17 @@ void redirBuf(char *leftBp, char *fileBp, char tokken);
 void pipeBuf(char *leftBp, char *rightBp);
 void parseBuf(char *buf);
 
+void strSplit(char *str, char* head[], int len);
 
 int openBuf(char *bp, int mode) {
     int fd;
-    while(*bp == ' ') {
-        bp++;
-    }
+    char* paths[2];
 
-    if((fd = open(bp, mode)) < 0) {
-        fprintf(2, "open %s failed\n", bp);
+    strSplit(bp, paths, 2);
+
+    if((fd = open(paths[0], mode)) < 0) {
+        fprintf(2, "open %s failed\n", paths[0]);
+        fprintf(2, "mode is %d \n", mode);
         exit(-1);
     };
 
@@ -37,40 +39,46 @@ int openBuf(char *bp, int mode) {
 }
 
 
+char blanks[] = " \t\r\n\v";
+
+
+void strSplit(char *str, char* head[], int headLen) {
+    char *bp;
+    int pos;
+    
+    for(bp = str; strchr(blanks, *bp); bp++);
+    
+    pos = 0;
+    
+    while(*bp && pos < headLen - 1) {
+        head[pos++] = bp;
+        while(*bp && !strchr(blanks, *bp)) bp++;
+        while(strchr(blanks, *bp)) {
+            *bp++ = '\0';
+        }
+    }
+    
+    head[pos] = 0;
+    
+    return;
+}
+
+
 void execBuf(char *bp) {
-    char* execArgs[MAXARG];
-    int pos = 0;
+    char* execArgs[MAXARG+1];
     int result;
     
     if(*bp == 0)
         exit(0);         // empty
 
-    while(*bp == ' ') {
-        bp++;           // redundant blank at the beginning
-    }
+    strSplit(bp, execArgs, MAXARG+1);
 
-    execArgs[pos++] = bp++;
-
-    while(*bp) {
-        if(*bp == ' ' || *bp == '\n') {
-            *bp++ = '\0';
-            if(*bp)                     // redundant blank at the end
-                execArgs[pos++] = bp;
-        }
-        else {
-            bp++;
-        }
-    }
-    execArgs[pos] = 0;
-    
     if(fork() == 0) {
         exec(execArgs[0], execArgs);
+        fprintf(2, "exec %s failed", bp);
+        exit(-1);
     }
     else {
-        fprintf(2, "checkout exec args\n");
-        for(pos = 0; execArgs[pos]; pos++) {
-            fprintf(2, "debug: %s\n", execArgs[pos]);
-        }
         close(0);
         close(1);
         wait(&result);
@@ -133,8 +141,6 @@ void pipeBuf(char *leftBp, char *rightBp) {
 void parseBuf(char *buf) {
     char *p;
     
-    fprintf(2, "parse:%s\n", buf);
-
     for(p = buf; *p; p++);
     for(p--; p >= buf; p--) {
         switch(*p){
