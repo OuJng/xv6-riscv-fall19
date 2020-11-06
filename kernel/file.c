@@ -30,25 +30,14 @@ struct file*
 filealloc(void)
 {
   struct file *f;
-
   acquire(&ftable.lock);
-  
   f = (struct file *) bd_malloc(sizeof(struct file));
   if(f != 0) {
+    memset(f, 0, sizeof(struct file));
     f->ref = 1;
     release(&ftable.lock);
     return f;
   }
-
-/*
-  for(f = ftable.file; f < ftable.file + NFILE; f++){
-    if(f->ref == 0){
-      f->ref = 1;
-      release(&ftable.lock);
-      return f;
-    }
-  }
-*/
 
   release(&ftable.lock);
   return 0;
