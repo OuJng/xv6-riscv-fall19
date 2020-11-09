@@ -71,9 +71,9 @@ usertrap(void)
   } 
   else if (r_scause() == 13 || r_scause() == 15) { 
     uint64 va = (uint64)r_stval();
-    // handle faults
-    if(va >= p->sz) {
-      printf("invalid virtual address\n");
+    // validation check
+    if(va >= p->sz || va < p->tf->sp) {
+      // printf("invalid virtual address %p\nsize %p sp %p\n", va, p->sz, p->tf->sp);
       p->killed = 1;
     }
     else {    // lazy alloc
@@ -81,12 +81,12 @@ usertrap(void)
       if(pa != 0) {
         memset(pa, 0, PGSIZE);
         if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)pa, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
-          printf("mappage failed\n");
+          // printf("mappage failed\n");
           kfree(pa);
           p->killed = 1;
         }
       } else {
-        printf("kalloc failed\n");
+        // printf("kalloc failed\n");
         p->killed = 1;
       }
     }
