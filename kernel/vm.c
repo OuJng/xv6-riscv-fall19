@@ -15,7 +15,40 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-void print(pagetable_t);
+
+void printout(int index, pte_t pte, int level) {
+  for(int i = 0; i < level; i++) {
+    printf(" ..");
+  }
+  printf("%d: pte %p pa %p\n", index, pte, PTE2PA(pte));
+  return;
+}
+
+
+void DFSprint(pagetable_t pagetable, int level) {
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+
+    if(pte & PTE_V) {
+      printout(i, pte, level);
+
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        DFSprint((pagetable_t)child, level+1);
+      }
+    }
+  }
+  return;
+}
+
+
+void vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable);
+  DFSprint(pagetable, 1);
+  return;
+}
+
+
 
 /*
  * create a direct-map page table for the kernel and
@@ -189,13 +222,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
   for(;;){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0){
-      printf("va=%p pte=%p\n", a, *pte);
-      panic("uvmunmap: not mapped");
-    }
+    // if((*pte & PTE_V) == 0){
+    //   // printf("va=%p pte=%p\n", a, *pte);
+    //   // panic("uvmunmap: not mapped");
+    // }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
+    if(do_free && (*pte & PTE_V) != 0){
       pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
