@@ -14,7 +14,7 @@ void screen(int readEnd){
         printf("prime %d\n", base);
         pipe(rightPipe);
 
-        if(fork() != 0) {    
+        if(fork() == 0) {    
             close(1);               // redirect
             dup(rightPipe[1]);      // use 1
             close(rightPipe[0]);
@@ -51,6 +51,8 @@ int main(int argc, char* argv[]) {
             write(1, &i, sizeof(i));
         }
         close(1);
+        close(0);
+        wait();
         exit();
     }
     else {
