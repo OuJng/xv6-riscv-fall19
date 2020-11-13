@@ -322,7 +322,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -331,13 +330,27 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    
+    if((flags & PTE_W) && (flags & PTE_U) ) {                                   // check write permission
+      flags = (PTE_FLAGS(*pte) & (~PTE_W)) | (PTE_COW);   // disable write permission, set COW
+    }
+
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      // kfree(mem);
       goto err;
     }
+    
+    kRefIncrease((uint64)pa);
+
+    if(flags & PTE_W) {
+      *pte = (*pte & (~PTE_W)) | (PTE_COW);
+    }
+    
   }
   return 0;
 
@@ -450,4 +463,37 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// return 1 if successfully handle COW,
+// return 0 if not a COW exception or failed.
+int uvmcow(pagetable_t pagetable, uint64 va) {
+  pte_t *pte = walk(pagetable, va, 0);
+  if((pte = walk(pagetable, va, 0)) == 0) {
+    panic("uvmcow: walk");
+  }
+  if(!((*pte & PTE_COW) && (*pte & PTE_V) && (*pte & PTE_U))){    // not COW exception
+    return 0;
+  }
+
+  void *oldPa = (void *)PTE2PA(*pte);
+
+
+
+  void *mem = kalloc();
+  if(mem == 0) {
+    kfree(mem);
+    printf("COW: kalloc failed");
+    return 0;
+  }
+  int newFlag = (PTE_FLAGS(*pte) & (~PTE_COW)) | (PTE_W);
+  *pte = PA2PTE(mem) | newFlag;
+
+  // // debug
+  // printf("cow, va %p pa %p\n", (void*)va, oldPa);
+  // printf("    new %p\n", mem);
+
+  memmove(mem, oldPa, PGSIZE);
+  kfree(oldPa);
+  return 1;
 }
