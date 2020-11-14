@@ -78,8 +78,11 @@ kvminithart()
 static pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
-  if(va >= MAXVA)
-    panic("walk");
+  if(va >= MAXVA) {
+    // printf("%p\n", va);
+    // panic("walk");
+    return 0;
+  }
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -322,7 +325,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
@@ -331,8 +333,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     
-    if((flags & PTE_W) && (flags & PTE_U) ) {                                   // check write permission
-      flags = (PTE_FLAGS(*pte) & (~PTE_W)) | (PTE_COW);   // disable write permission, set COW
+    if(flags & PTE_W) {             // check write permission
+      flags = (PTE_FLAGS(*pte) & (~PTE_W)) | PTE_COW;   // disable write permission, set COW
     }
 
     // if((mem = kalloc()) == 0)
@@ -347,8 +349,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     
     kRefIncrease((uint64)pa);
 
-    if(flags & PTE_W) {
-      *pte = (*pte & (~PTE_W)) | (PTE_COW);
+    if(*pte & PTE_W) {
+      *pte = (*pte & (~PTE_W)) | PTE_COW;
     }
     
   }
@@ -380,6 +382,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  for(va0 = PGROUNDDOWN(dstva); va0 < dstva + len; va0 += PGSIZE) {
+    uvmcow(pagetable, va0);
+  }
+
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
@@ -388,6 +394,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
+    
+
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
     len -= n;
@@ -469,24 +477,22 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 // return 0 if not a COW exception or failed.
 int uvmcow(pagetable_t pagetable, uint64 va) {
   pte_t *pte = walk(pagetable, va, 0);
-  if((pte = walk(pagetable, va, 0)) == 0) {
-    panic("uvmcow: walk");
+  if(pte == 0) {
+    printf("uvmcow: walk\n");
+    return 0;
   }
-  if(!((*pte & PTE_COW) && (*pte & PTE_V) && (*pte & PTE_U))){    // not COW exception
+  if(!((*pte & PTE_COW) && (*pte & PTE_V) && (*pte & PTE_U) && (!(*pte & PTE_W)))){    // not COW exception
     return 0;
   }
 
-  void *oldPa = (void *)PTE2PA(*pte);
-
-
+  void *oldPa = (void*)PTE2PA(*pte);
 
   void *mem = kalloc();
   if(mem == 0) {
-    kfree(mem);
-    printf("COW: kalloc failed");
+    printf("COW: kalloc failed\n");
     return 0;
   }
-  int newFlag = (PTE_FLAGS(*pte) & (~PTE_COW)) | (PTE_W);
+  uint64 newFlag = (PTE_FLAGS(*pte) & (~PTE_COW)) | PTE_W;
   *pte = PA2PTE(mem) | newFlag;
 
   // // debug
@@ -497,3 +503,8 @@ int uvmcow(pagetable_t pagetable, uint64 va) {
   kfree(oldPa);
   return 1;
 }
+
+
+uint64 peekPA(pagetable_t pagetable, uint64 va) {
+  return (uint64)PTE2PA(*walk(pagetable, va, 0));
+} 

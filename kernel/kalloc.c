@@ -27,7 +27,6 @@ struct {
 } kmem;
 
 
-
 void
 kinit()
 {
@@ -46,16 +45,6 @@ kinit()
 
   freerangeInit(end + physicalOffset, (void*)PHYSTOP);
 }
-
-// debug
-void printKRef(uint64 pa) {
-  uint64 index = ((uint64)pa - (uint64)end) >> 12;
-
-  acquire(&kmem.lock);
-  printf("%p ref %d\n", (void*)pa, kmem.refs[index]);
-  release(&kmem.lock);
-}
-
 
 
 
@@ -154,7 +143,7 @@ kfree(void *pa)
   uint64 index = ((uint64)pa - (uint64)end) >> 12;
 
   acquire(&kmem.lock);
-  if(--kmem.refs[index] != 0) {     // still have reference, don't free
+  if((--kmem.refs[index]) != 0) {     // still have reference, don't free
     release(&kmem.lock);
     return;
   }
@@ -166,7 +155,6 @@ kfree(void *pa)
   r = (struct run*)pa;
 
   acquire(&kmem.lock);
-
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -185,14 +173,16 @@ kalloc(void)
   uint64 index = ((uint64)r - (uint64)end) >> 12;
   if(r) {
     kmem.freelist = r->next;
-    if(kmem.refs[index]) {
-      panic("kalloc: ref error");
-    }
+    // // debug
+    // if(kmem.refs[index]) {
+    //   panic("kalloc: ref error");
+    // }
     kmem.refs[index] = 1;
   }
   release(&kmem.lock);
 
-  if(r)
+  if(r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+  }
   return (void*)r;
 }

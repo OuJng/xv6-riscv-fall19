@@ -70,7 +70,7 @@ usertrap(void)
   }
   else if(r_scause() == 15) {   // may be COW fault
     if(!uvmcow(p->pagetable, r_stval())) {
-      printf("write error\n");
+      printf("trap: write error\n");
       p->killed = 1;
     }
   }
