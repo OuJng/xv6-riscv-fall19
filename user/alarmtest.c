@@ -32,6 +32,7 @@ periodic()
   count = count + 1;
   printf("alarm!\n");
   sigreturn();
+  printf("met");
 }
 
 // tests whether the kernel calls

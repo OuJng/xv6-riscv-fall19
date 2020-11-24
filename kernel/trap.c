@@ -67,6 +67,20 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+    if(which_dev == 2) {
+      if(p->ticking > 0) {
+        p->ticking--;
+      }
+      if(p->ticking == 0 && p->handling == 0) {
+        p->tmp = kalloc();      // kfree in sigret
+        *(p->tmp) = *(p->tf);   // save trapframe
+        p->ticking = p->interval;
+        
+        p->tf->epc = p->func;   // run handler
+        p->handling = 1;
+      }
+    }
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -200,7 +214,7 @@ devintr()
     if(cpuid() == 0){
       clockintr();
     }
-    
+
     // acknowledge the software interrupt by clearing
     // the SSIP bit in sip.
     w_sip(r_sip() & ~2);
