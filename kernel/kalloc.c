@@ -18,16 +18,21 @@ struct run {
   struct run *next;
 };
 
-struct {
+struct kmem {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+};
+
+struct kmem cpumem[NCPU];
+
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  for(int i = 0; i < NCPU; i++) {
+    initlock(&cpumem[i].lock, "kmem");
+  }
+  freerange(end, (void*)PHYSTOP);     // should be called once?
 }
 
 void
@@ -56,11 +61,29 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  push_off();
+  int id = cpuid();
+  pop_off();
+
+  acquire(&cpumem[id].lock);
+  r->next = cpumem[id].freelist;
+  cpumem[id].freelist = r;
+  release(&cpumem[id].lock);
 }
+
+
+void stealmem(struct run *fp, struct run **head) {
+  while(fp) {
+    struct run *p = fp->next;     
+    if(p) {                       // if fp->next not null:
+      fp->next = p->next;         //  1. delete fp->next
+      p->next = *head;            //  2. set fp->next as list head
+      *head = p;
+    }
+    fp = fp->next;
+  }
+}
+
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
@@ -70,13 +93,36 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();
+  int id = cpuid();
+  pop_off();
+
+  struct kmem *currmem = &cpumem[id];
+
+  acquire(&currmem->lock);
+  r = currmem->freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    currmem->freelist = r->next;
+  release(&currmem->lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+  else {
+    // start from id, circuit loop to improve performance (avoiding too much steal from cpu0)
+    for(int i = id + 1; i != id; i = (i==NCPU-1)? 0 : i+1) {
+      acquire(&cpumem[i].lock);
+      if(cpumem[i].freelist) {            // steal begin
+        acquire(&currmem->lock);          // deadlock won't occur because currmem.freelist is 0
+        r = cpumem[i].freelist;           // get return value
+        cpumem[i].freelist = r->next;
+        stealmem(cpumem[i].freelist, &currmem->freelist);
+        release(&currmem->lock);  
+        release(&cpumem[i].lock);     
+        return (void*)r;                  // finished
+      } 
+      release(&cpumem[i].lock);
+    }
+  }
+
   return (void*)r;
 }
