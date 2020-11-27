@@ -494,8 +494,8 @@ uint64 sys_mmap(void) {
       argint(5, &offset) < 0) {
     return MMAPFAILED;
   }
-  
 
+  
 }
 
 uint64 sys_munmap(void) {
