@@ -701,3 +701,14 @@ nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
 }
+
+// symlink
+
+int readlink(struct inode *ip, char *target, int len) {
+  return 0;
+}
+
+
+int writelink(struct inode *ip, char *target, int len) {
+  return 0;
+}

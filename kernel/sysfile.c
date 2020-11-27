@@ -314,6 +314,16 @@ sys_open(void)
       end_op(ROOTDEV);
       return -1;
     }
+    // case symlink
+    if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+      // reuse path.
+      readi(ip, 0, (uint64)path, 0, MAXPATH);
+      iunlockput(ip);
+      if((ip = namei(path)) == 0) {
+        end_op(ROOTDEV);
+        return -1;
+      }
+    }
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -484,7 +494,28 @@ sys_pipe(void)
 }
 
 
-  uint64 sys_symlink(void) {
-    
-    return 0;
+uint64 sys_symlink(void) {
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+  int len;
+
+  if((len = argstr(0, target, MAXPATH)) < 0 || argstr(1, path, MAXPATH) < 0) {
+    return -1;
   }
+  
+  begin_op(ROOTDEV);
+
+  ip = create(path, T_SYMLINK, 0, 0);
+  if(ip == 0) {
+    end_op(ROOTDEV);
+    return -1;
+  }
+  
+  ilock(ip);
+  writei(ip, 0, (uint64)target, 0, len+1);
+  ip->type = T_SYMLINK;
+  iunlock(ip);
+
+  end_op(ROOTDEV);
+  return 0;
+}
