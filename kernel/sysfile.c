@@ -315,14 +315,20 @@ sys_open(void)
       return -1;
     }
     // case symlink
-    if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+    int times = 0;
+    while(ip->type == T_SYMLINK && (!(omode & O_NOFOLLOW))){
       // reuse path.
       readi(ip, 0, (uint64)path, 0, MAXPATH);
       iunlockput(ip);
+      if(times++ > 10) {
+        end_op(ROOTDEV);
+        return -1;
+      }
       if((ip = namei(path)) == 0) {
         end_op(ROOTDEV);
         return -1;
       }
+      ilock(ip);
     }
   }
 
@@ -510,12 +516,11 @@ uint64 sys_symlink(void) {
     end_op(ROOTDEV);
     return -1;
   }
-  
-  ilock(ip);
-  writei(ip, 0, (uint64)target, 0, len+1);
-  ip->type = T_SYMLINK;
-  iunlock(ip);
 
+  ip->type = T_SYMLINK;
+  writei(ip, 0, (uint64)target, 0, len+1);
+  iunlockput(ip);
   end_op(ROOTDEV);
+
   return 0;
 }
