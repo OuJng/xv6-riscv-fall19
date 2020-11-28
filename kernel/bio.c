@@ -24,13 +24,20 @@
 #include "buf.h"
 
 #define NBUCKET 13
-#define BUCKETLEN ((NBUF+NBUCKET-1)/NBUCKET)+1    // roundup division
+#define BUCKETLEN (NBUF / NBUCKET)
+
+// struct bcache {
+//   struct spinlock lock;
+//   struct buf buf[BUCKETLEN];
+//   // Linked list of all buffers, through prev/next.
+//   // head.next is most recently used.
+//   struct buf head;
+// };
+
+struct buf bbuf[NBUF];
 
 struct bcache {
   struct spinlock lock;
-  struct buf buf[BUCKETLEN];
-  // Linked list of all buffers, through prev/next.
-  // head.next is most recently used.
   struct buf head;
 };
 
@@ -39,7 +46,7 @@ struct bcache cachebucket[NBUCKET];
 void
 binit(void)
 {
-  struct buf *b;
+  struct buf *b = bbuf;
 
   for(int i = 0; i < NBUCKET; i++) {
     struct bcache *bucket = cachebucket + i;
@@ -47,13 +54,24 @@ binit(void)
     // Create linked list of buffers
     bucket->head.prev = &bucket->head;
     bucket->head.next = &bucket->head;
-    for(b = bucket->buf; b < bucket->buf+BUCKETLEN; b++){
+    for(int j = 0; j < BUCKETLEN; j++){
       b->next = bucket->head.next;
       b->prev = &bucket->head;
       initsleeplock(&b->lock, "buffer");
       bucket->head.next->prev = b;
       bucket->head.next = b;
+      b++;
     }
+  }
+  // put the rest into cachebucket[0]
+  while(b < bbuf + NBUF) {
+    struct bcache *bucket = cachebucket;
+    b->next = bucket->head.next;
+    b->prev = &bucket->head;
+    initsleeplock(&b->lock, "buffer");
+    bucket->head.next->prev = b;
+    bucket->head.next = b;
+    b++;
   }
 }
 
@@ -65,7 +83,7 @@ bget(uint dev, uint blockno)
 {
   struct buf *b;
 
-  struct bcache *bucket = cachebucket + (blockno % NBUCKET);
+  struct bcache *bucket = &cachebucket[blockno % NBUCKET];
 
   acquire(&bucket->lock);
 
@@ -91,6 +109,34 @@ bget(uint dev, uint blockno)
       return b;
     }
   }
+
+  // No unused buffer. Steal from another bucket
+  for(int i = (blockno + 1) % NBUCKET; i != (blockno % NBUCKET); i = (i+1) % NBUCKET) {
+    struct bcache *target = &cachebucket[i];
+    if(!holding(&target->lock)) {
+      acquire(&target->lock);
+      for(b = target->head.next; b != &target->head; b = b->next) {
+        if(b->refcnt == 0) {
+          b->dev = dev;
+          b->blockno = blockno;
+          b->valid = 0;
+          b->refcnt = 1;
+          b->next->prev = b->prev;
+          b->prev->next = b->next;
+          b->next = bucket->head.next;
+          b->prev = &bucket->head;
+          bucket->head.next->prev = b;
+          bucket->head.next = b;
+          release(&bucket->lock);
+          release(&target->lock);
+          acquiresleep(&b->lock);
+          return b;
+        }
+      }
+    }
+    release(&target->lock);
+  }
+
   panic("bget: no buffers");
 }
 
@@ -140,7 +186,6 @@ brelse(struct buf *b)
     bucket->head.next->prev = b;
     bucket->head.next = b;
   }
-  
   release(&bucket->lock);
 }
 

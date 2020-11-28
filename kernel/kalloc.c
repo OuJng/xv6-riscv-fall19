@@ -109,7 +109,7 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   else {
     // start from id, circuit loop to improve performance (avoiding too much steal from cpu0)
-    for(int i = id + 1; i != id; i = (i==NCPU-1)? 0 : i+1) {
+    for(int i = (id+1) % NCPU; i != id; i = (i+1) % NCPU) {
       acquire(&cpumem[i].lock);
       if(cpumem[i].freelist) {            // steal begin
         acquire(&currmem->lock);          // deadlock won't occur because currmem.freelist is 0
