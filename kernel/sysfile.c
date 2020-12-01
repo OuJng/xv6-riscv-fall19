@@ -484,18 +484,40 @@ sys_pipe(void)
 }
 
 uint64 sys_mmap(void) {
-  uint64 addr;
-  int length, prot, flags, fd, offset;
+  uint64 addr;    // always zero in this lab
+  int length, prot, flags, offset;
+  struct file *fd;
+  struct filemap *map = 0;
+  
   if(argaddr(0, &addr) < 0 ||
       argint(1, &length) < 0 ||
       argint(2, &prot) < 0 ||
       argint(3, &flags) < 0 ||
-      argint(4, &fd) < 0 ||
+      argfd(4, 0, &fd) < 0 ||
       argint(5, &offset) < 0) {
     return MMAPFAILED;
   }
-
+  struct proc *p = myproc();
   
+  for(int i = 0; i < MAXFILEMAP; i++) {
+    if(p->files[i].f == 0) {
+      map = &(p->files[i]);
+      break;
+    }
+  }
+
+  if(!map) {
+    panic("mmap:not enough space");
+  }
+
+  map->f = fd;
+  map->flags = flags;
+  map->prot = prot;
+  
+  map->from = 0; // shoud find a free space!!!!!!!!
+  map->to = map->from + (uint64)offset;
+
+  return map->from;
 }
 
 uint64 sys_munmap(void) {

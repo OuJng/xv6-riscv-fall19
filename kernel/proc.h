@@ -82,6 +82,16 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define MAXFILEMAP 64
+
+struct filemap {
+  uint64 from;
+  uint64 to;
+  struct file *f;
+  int prot;
+  int flags;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -103,4 +113,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  struct filemap files[MAXFILEMAP];
 };
