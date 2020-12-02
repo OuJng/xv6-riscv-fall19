@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -31,6 +32,27 @@ trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
 }
+
+
+int mapfile(uint64 va) {
+  struct filemap *files = myproc()->files;
+  uint64 offset, addr;
+  
+  for(int i = 0; i < MAXFILEMAP; i++) {
+    if(va >= files[i].from && va < files[i].to) {
+      struct file *f = files[i].f;
+      offset = va - files[i].from;
+      if((addr = kalloc()) == 0) {
+        printf("kalloc failed on file page\n");
+        return 0;
+      }
+      else {
+        readi(f->ip, 0, addr, offset, PGSIZE);
+      }
+    }
+  }
+}
+
 
 //
 // handle an interrupt, exception, or system call from user space.
@@ -72,22 +94,7 @@ usertrap(void)
     // ok
   }
   else if(r_scause() == 13 || r_scause() == 15) {
-    for(int i = 0; i < MAXFILEMAP; i++) {
-      uint64 va = r_stval();
-      if(va >= p->files[i].from && va < p->files[i].to) {
-        struct file *fd;
-        fd = p->files[i].f;
-        uint64 offset = va - p->files[i].from;
-        uint64 addr;
-        if((addr = kalloc()) == 0) {
-          printf("kalloc failed on file page\n");
-          p->killed = 1;
-        }
-        else {
-          readi(fd->ip, 0, addr, offset, PGSIZE);
-        }
-      }
-    }
+
   } 
   else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);
