@@ -485,7 +485,7 @@ sys_pipe(void)
 
 uint64 sys_mmap(void) {
   uint64 addr, length;    // always zero in this lab
-  int length, prot, flags, offset;
+  int prot, flags, offset;
   struct file *fd;
   struct filemap *map = 0;
   
@@ -505,12 +505,16 @@ uint64 sys_mmap(void) {
       break;
     }
   }
-  
+
+  if(!map) {
+    return -1;
+  }
+
   if(((uint64)(-1) - p->sz) < (uint64)length) {
     return -1;
   }
 
-  if(!map) {
+  if(!(fd->writable) && (prot & PROT_WRITE) && (flags == MAP_SHARED)) {
     return -1;
   }
 
@@ -518,21 +522,70 @@ uint64 sys_mmap(void) {
   map->flags = flags;
   map->prot = prot;
   
-  p->sz += (uint64)offset;
-  map->from = p->sz;
-  map->to = map->from + (uint64)offset;
+  map->start = map->from = PGROUNDUP(p->sz);
+  map->to = map->from + length;
 
+  p->sz = PGROUNDUP(map->to);
+  printf("\ntarge file size %p\n", fd->ip->size);
+  printf("finished, from %p, to %p, length %d\n", map->from, map->to, length);
+  filedup(fd);
   return map->from;
 }
 
+
+void write_back(struct file *f, uint64 va, uint64 length, uint64 offset) {
+  printf("writting back from %p size %p offset %p\n", va, length, offset);
+  
+  // struct proc *pr = myproc();
+  // char *p = (char*)walkaddr(pr->pagetable, va);
+  // for(int i = 0; i < PGSIZE; i++) {
+  //   printf("%d, ", p[i]);
+  // }
+  // printf("\n");
+
+  acquiresleep(&f->ip->lock);
+  begin_op(f->ip->dev);
+  writei(f->ip, 1, va, offset, length);
+  end_op(f->ip->dev);
+  releasesleep(&f->ip->lock);
+}
+
+
 uint64 sys_munmap(void) {
-  uint64 addr;
-  int length;
-  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
+  uint64 addr, length, to;
+  if(argaddr(0, &addr) < 0 || argaddr(1, &length) < 0) {
     return -1;
   }
+  struct proc *p = myproc();
 
-    struct proc *p = myproc();
+  to = addr + length;
+  length = PGROUNDDOWN(to) - PGROUNDDOWN(addr);
+  struct filemap *files = p->files;
+
+  for(int i = 0; i < MAXFILEMAP; i++) {
+    if(!files[i].f) {
+      continue;
+    }
+    if(files[i].from >= addr && files[i].to <= to) {
+      if(files[i].flags == MAP_SHARED)
+        write_back(files[i].f, files[i].from, files[i].to - files[i].from, files[i].from - files[i].start);
+      uvmunmap(p->pagetable, addr, length, 1);
+      fileclose(files[i].f);
+      files[i].f = 0;
+    }
+    else if(files[i].from >= addr) {  // left boundary
+      if(files[i].flags == MAP_SHARED)
+        write_back(files[i].f, files[i].from, to - files[i].from, files[i].from - files[i].start);
+      files[i].from = to;
+      uvmunmap(p->pagetable, PGROUNDDOWN(addr), PGROUNDDOWN(to) - PGROUNDDOWN(addr), 1);
+    }
+    else if(files[i].to <= to) {      // right boundary
+      if(files[i].flags == MAP_SHARED)
+        write_back(files[i].f, addr, files[i].to - addr, addr - files[i].start);
+      files[i].to = addr;
+      uvmunmap(p->pagetable, PGROUNDUP(addr), PGROUNDUP(to) - PGROUNDUP(addr), 1);
+    }
+  }
 
   return 0;
 }

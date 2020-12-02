@@ -85,6 +85,7 @@ enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 #define MAXFILEMAP 64
 
 struct filemap {
+  uint64 start;
   uint64 from;
   uint64 to;
   struct file *f;

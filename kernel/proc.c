@@ -8,6 +8,7 @@
 #include "file.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -277,6 +278,13 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  for(i = 0; i < MAXFILEMAP; i++) {
+    if(p->files[i].f) {
+      np->files[i] = p->files[i];
+      filedup(np->files[i].f);
+    }
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -332,6 +340,17 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+
+  for(int i = 0; i < MAXFILEMAP; i++) {
+    if(!p->files[i].f) {
+      continue;
+    }
+    if(p->files[i].flags == MAP_SHARED)
+      write_back(p->files[i].f, p->files[i].from, p->files[i].to - p->files[i].from, p->files[i].from - p->files[i].start);
+    uvmunmap(p->pagetable, p->files[i].from, p->files[i].to, 1);
+    fileclose(p->files[i].f);
+    p->files[i].f = 0;
   }
 
   begin_op(ROOTDEV);

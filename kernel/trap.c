@@ -5,7 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fcntl.h"
+#include "fs.h"
 #include "file.h"
+
 
 struct spinlock tickslock;
 uint ticks;
@@ -35,24 +39,59 @@ trapinithart(void)
 
 
 int mapfile(uint64 va) {
-  struct filemap *files = myproc()->files;
   uint64 offset, addr;
-  
-  for(int i = 0; i < MAXFILEMAP; i++) {
-    if(va >= files[i].from && va < files[i].to) {
-      pte_t 
+  struct filemap *files = myproc()->files;
 
+  pagetable_t pagetable = myproc()->pagetable;
+  va = PGROUNDDOWN(va);
+  printf("handling trap, read from %p\n", va);
+  for(int i = 0; i < MAXFILEMAP; i++) {
+    if(files[i].f && va >= files[i].from && va < files[i].to) {
       struct file *f = files[i].f;
       offset = va - files[i].from;
-      if((addr = kalloc()) == 0) {
+      
+
+      if((addr = (uint64)kalloc()) == 0) {
         printf("kalloc failed on file page\n");
         return 0;
       }
-      else {
-        readi(f->ip, 0, addr, offset, PGSIZE);
+
+      int written = 0;
+      
+      acquiresleep(&f->ip->lock);
+      written = readi(f->ip, 0, addr, offset, PGSIZE);
+      releasesleep(&f->ip->lock);
+      
+      if(written < PGSIZE) {
+        char *p = (char*)addr;
+        for(int i = written; i < PGSIZE; i++) {
+          p[i] = 0;
+        }
       }
+
+      // char *p = (char*)addr;
+      // for(int i = 0; i < PGSIZE; i++) {
+      //   printf("%x", p[i]);
+      // }
+
+      printf("offset %p, map on va %p\n", offset, va);
+
+
+      int newFlag = PTE_U;
+      if(files[i].prot & PROT_READ) {
+        newFlag |= PTE_R;
+      }
+      if(files[i].prot & PROT_WRITE) {
+        newFlag |= PTE_W;
+      }
+      
+      mappages(pagetable, va, PGSIZE, addr, newFlag);
+      printf("trap finished\n");
+      return 1;
     }
   }
+
+  return 0;
 }
 
 
@@ -96,7 +135,9 @@ usertrap(void)
     // ok
   }
   else if(r_scause() == 13 || r_scause() == 15) {
-
+    if(!mapfile(r_stval())) {
+      p->killed = 1;
+    }
   } 
   else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);

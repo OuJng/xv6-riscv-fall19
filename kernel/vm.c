@@ -187,15 +187,20 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0){
-      printf("va=%p pte=%p\n", a, *pte);
-      panic("uvmunmap: not mapped");
+    if((pte = walk(pagetable, a, 0)) == 0) {
+      if(a == last)
+        break;
+      a += PGSIZE;
+      pa += PGSIZE;
+      continue;
     }
-    if(PTE_FLAGS(*pte) == PTE_V)
+    else if((*pte & PTE_V) == 0){
+      // printf("va=%p pte=%p\n", a, *pte);
+      // panic("uvmunmap: not mapped");
+    }
+    else if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
+    else if(do_free){
       pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
@@ -326,9 +331,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
+    //  panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

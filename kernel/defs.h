@@ -206,3 +206,5 @@ void lst_push(struct list*, void *);
 void *lst_pop(struct list*);
 void lst_print(struct list*);
 int lst_empty(struct list*);
+
+void write_back(struct file *f, uint64 va, uint64 length, uint64 offset);
