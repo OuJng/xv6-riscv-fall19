@@ -70,7 +70,26 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  else if(r_scause() == 13 || r_scause() == 15) {
+    for(int i = 0; i < MAXFILEMAP; i++) {
+      uint64 va = r_stval();
+      if(va >= p->files[i].from && va < p->files[i].to) {
+        struct file *fd;
+        fd = p->files[i].f;
+        uint64 offset = va - p->files[i].from;
+        uint64 addr;
+        if((addr = kalloc()) == 0) {
+          printf("kalloc failed on file page\n");
+          p->killed = 1;
+        }
+        else {
+          readi(fd->ip, 0, addr, offset, PGSIZE);
+        }
+      }
+    }
+  } 
+  else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

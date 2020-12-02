@@ -506,7 +506,7 @@ uint64 sys_mmap(void) {
     }
   }
   
-  if(((uint64)(-1) - p->sz) < length) {
+  if(((uint64)(-1) - p->sz) < (uint64)length) {
     return -1;
   }
 
@@ -532,6 +532,7 @@ uint64 sys_munmap(void) {
     return -1;
   }
 
+    struct proc *p = myproc();
 
   return 0;
 }
