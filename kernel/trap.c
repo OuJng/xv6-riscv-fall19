@@ -40,6 +40,8 @@ int mapfile(uint64 va) {
   
   for(int i = 0; i < MAXFILEMAP; i++) {
     if(va >= files[i].from && va < files[i].to) {
+      pte_t 
+
       struct file *f = files[i].f;
       offset = va - files[i].from;
       if((addr = kalloc()) == 0) {
