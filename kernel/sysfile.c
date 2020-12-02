@@ -484,18 +484,18 @@ sys_pipe(void)
 }
 
 uint64 sys_mmap(void) {
-  uint64 addr;    // always zero in this lab
+  uint64 addr, length;    // always zero in this lab
   int length, prot, flags, offset;
   struct file *fd;
   struct filemap *map = 0;
   
   if(argaddr(0, &addr) < 0 ||
-      argint(1, &length) < 0 ||
+      argaddr(1, &length) < 0 ||
       argint(2, &prot) < 0 ||
       argint(3, &flags) < 0 ||
       argfd(4, 0, &fd) < 0 ||
       argint(5, &offset) < 0) {
-    return MMAPFAILED;
+    return -1;
   }
   struct proc *p = myproc();
   
@@ -505,16 +505,21 @@ uint64 sys_mmap(void) {
       break;
     }
   }
+  
+  if(((uint64)(-1) - p->sz) < length) {
+    return -1;
+  }
 
   if(!map) {
-    panic("mmap:not enough space");
+    return -1;
   }
 
   map->f = fd;
   map->flags = flags;
   map->prot = prot;
   
-  map->from = 0; // shoud find a free space!!!!!!!!
+  p->sz += (uint64)offset;
+  map->from = p->sz;
   map->to = map->from + (uint64)offset;
 
   return map->from;
